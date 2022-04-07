@@ -41,6 +41,7 @@ def create_items(stac_credential=None):
 
     storage_options = dict(account_name="cpdataeuwest", credential=asset_credential)
     fs = adlfs.AzureBlobFileSystem(**storage_options)
+    # TODO: support a "since"-style argument
     roots = fs.glob("era5/ERA5/*/*")
     ditems = []
     for root in roots:
@@ -53,7 +54,7 @@ def create_items(stac_credential=None):
             )
 
     with dask.distributed.Client() as client:
-        print(client.dashboard_address)
+        print(client.dashboard_link)
         items = dask.compute(*ditems)
 
     item_dir = pathlib.Path("items")
@@ -73,3 +74,4 @@ def create_items(stac_credential=None):
             json.dumps(item.to_dict()).encode(),
             content_settings=content_settings,
         )
+    return items
