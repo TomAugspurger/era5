@@ -34,7 +34,7 @@ def create_collection():
     return collection
 
 
-def create_items(stac_credential=None):
+def create_items(stac_credential=None, overwrite=True):
     # import tqdm.notebook
     asset_credential = planetary_computer.sas.get_token("cpdataeuwest", "era5").token
     stac_credential = stac_credential or os.environ["AZURE_STAC_CREDENTIAL"]
@@ -73,5 +73,10 @@ def create_items(stac_credential=None):
             f"items/{item.id}.json",
             json.dumps(item.to_dict()).encode(),
             content_settings=content_settings,
+            overwrite=overwrite,
         )
     return items
+
+
+if __name__ == "__main__":
+    create_collection()
