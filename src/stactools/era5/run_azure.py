@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import pathlib
+import pystac
 
 import adlfs
 import azure.storage.blob
@@ -31,6 +32,17 @@ def create_collection():
     collection = stac.create_collection(
         root, protocol, storage_options, extra_fields=extra_fields
     )
+    collection.providers.append(
+        pystac.Provider(
+            "Microsoft",
+            roles=[pystac.ProviderRole.HOST],
+            url="https://planetarycomputer.microsoft.com/",
+        )
+    )
+    pathlib.Path(f"{collection.id}.json").write_text(
+        json.dumps(collection.to_dict(), indent=2)
+    )
+
     return collection
 
 

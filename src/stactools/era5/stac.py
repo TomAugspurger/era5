@@ -85,11 +85,6 @@ def create_collection(
             roles=[pystac.ProviderRole.PROCESSOR],
             url="https://planetos.com/",
         ),
-        pystac.Provider(
-            "Microsoft",
-            roles=[pystac.ProviderRole.HOST],
-            url="https://planetarycomputer.microsoft.com/",
-        ),
     ]
     extra_fields.update(collection_datacube)
     collection_id = "era5-pds"
@@ -152,7 +147,6 @@ def create_collection(
     r.remove_links(pystac.RelType.SELF)
     r.remove_links(pystac.RelType.ROOT)
 
-    pathlib.Path(f"{r.id}.json").write_text(json.dumps(r.to_dict(), indent=2))
     return r
 
 
