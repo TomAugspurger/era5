@@ -121,9 +121,9 @@ def create_collection(
     r.add_asset(
         "thumbnail",
         pystac.Asset(
-            "https://datastore.copernicus-climate.eu/c3s/published-forms-v2/c3sprod_clone/reanalysis-era5-pressure-levels/overview.jpg",
+            "https://ai4edatasetspublicassets.blob.core.windows.net/assets/pc_thumbnails/era5-thumbnail.png",
             title="Thumbnail",
-            media_type=pystac.MediaType.JPEG,
+            media_type=pystac.MediaType.PNG,
         ),
     )
 
