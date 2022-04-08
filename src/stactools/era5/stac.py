@@ -32,6 +32,8 @@ AN_VARIABLES = [
     "air_pressure_at_mean_sea_level",
     "dew_point_temperature_at_2_metres",
 ]
+KINDS = ["an", "fc"]
+
 
 
 def create_collection(
@@ -47,12 +49,7 @@ def create_collection(
     extra_fields = extra_fields or {}
 
     fs = fsspec.filesystem(protocol, **storage_options)
-    all_store_paths = fs.ls(root_path)
-
-    items = [
-        create_item(kind, store_paths, protocol, storage_options)
-        for kind, store_paths in group_paths(all_store_paths)
-    ]
+    items = [create_item(root_path, kind, protocol, storage_options) for kind in KINDS]
 
     collection_datacube = create_collection_datacube(items)
     # Done with I/O
@@ -151,18 +148,27 @@ def create_collection(
 
 
 def create_item(
+    path: str,
     kind: str,
-    store_paths: list[str],
     protocol: str,
     storage_options: dict[str, Any] | None = None,
 ) -> pystac.Item:
     """
     Create an ERA5 item from a list of paths, all of the same "kind".
 
-    This item has one asset per path in ``store_paths``.
+    Parameters
+    ----------
+    path : str
+        The "root" of an item, like ERA5/1979/01/
+    kind: str
+        One of "an" or "fc". This function will list all files under the root
+        'path' and filter down to just those for kind 'kind'.
     """
     storage_options = storage_options or {}
     fs = fsspec.filesystem(protocol, **storage_options)
+    store_paths = fs.ls(path)
+    store_paths = filter_kind(store_paths, kind)
+
     dss = [
         xr.open_dataset(fs.get_mapper(store), engine="zarr", consolidated=True)
         for store in store_paths
@@ -271,4 +277,14 @@ def collection_key(path: str) -> bool:
     }
     p = pathlib.Path(path)
     return p.stem in fc_vars
+
+
+def filter_kind(store_paths, kind):
+    if kind == "fc":
+        variables = set(FC_VARIABLES)
+    else:
+        variables = set(AN_VARIABLES)
+
+    stems = [pathlib.Path(s).stem for s in store_paths]
+    return [x for x, s in zip(store_paths, stems) if s in variables]
 
