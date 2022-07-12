@@ -1,6 +1,23 @@
+"""
+ETL from the Climate Data Store to Azure
+"""
+from __future__ import annotations
+import argparse
+
+import os
+import zarr
+import azure.storage.blob
+import time
+import functools
+import subprocess
+import sys
+import tempfile
+from typing import Any
+import fsspec
 import pandas as pd
+import rich.logging
+import enum
 import numpy as np
-import cdsapi
 import urllib3
 import xarray as xr
 
@@ -9,8 +26,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+FIRST_PERIOD = pd.Period("1959-01-01", freq="M")
+
+
+class Kind(str, enum.Enum):
+    forecast = "forecast"
+    analysis = "analysis"
+
+
 FC_VARIABLES = [
-    "large_scale_precipitation",
+    "total_precipitation",
     "maximum_2m_temperature_since_previous_post_processing",
     "minimum_2m_temperature_since_previous_post_processing",
     "surface_solar_radiation_downwards",
@@ -23,10 +48,11 @@ AN_VARIABLES = [
     "10m_v_component_of_wind",
     "2m_dewpoint_temperature",
     "2m_temperature",
-    "mean_sea_level_pressure"
+    "mean_sea_level_pressure",
     "sea_surface_temperature",
     "surface_pressure",
 ]
+KINDS_TO_VARIABLES = {Kind.forecast: FC_VARIABLES, Kind.analysis: AN_VARIABLES}
 
 
 DS_ATTRS = {"institution": "ECMWF", "source": "Reanalysis", "title": "ERA5 forecasts"}
@@ -149,13 +175,15 @@ ATTRS = {
         "standard_name": "dew_point_temperature",
         "units": "K",
     },
-    "air_pressure_at_mean_sea_level": {'long_name': 'Mean sea level pressure',
- 'nameCDM': 'Mean_sea_level_pressure_surface',
- 'nameECMWF': 'Mean sea level pressure',
- 'product_type': 'analysis',
- 'shortNameECMWF': 'msl',
- 'standard_name': 'air_pressure_at_mean_sea_level',
- 'units': 'Pa'},
+    "air_pressure_at_mean_sea_level": {
+        "long_name": "Mean sea level pressure",
+        "nameCDM": "Mean_sea_level_pressure_surface",
+        "nameECMWF": "Mean sea level pressure",
+        "product_type": "analysis",
+        "shortNameECMWF": "msl",
+        "standard_name": "air_pressure_at_mean_sea_level",
+        "units": "Pa",
+    },
     "lon": {
         "long_name": "longitude",
         "standard_name": "longitude",
@@ -172,7 +200,7 @@ ATTRS = {
 
 NAMES = {
     "sp": "surface_air_pressure",
-    "lsp": "precipitation_amount_1hour_Accumulation",
+    "tp": "precipitation_amount_1hour_Accumulation",
     "longitude": "lon",
     "latitude": "lat",
     "time": "time",
@@ -187,10 +215,10 @@ NAMES = {
     "sst": "sea_surface_temperature",
     "d2m": "dew_point_temperature_at_2_metres",
     "msl": "air_pressure_at_mean_sea_level",
-    # "surface_pressure": "surface_air_pressure",
 }
 
 
+# These are "forecast" variables, which need a `time1_bnds` data variable and `nv` coordinate.
 HAS_TIME_BOUNDS = {
     "precipitation_amount_1hour_Accumulation",
     "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation",
@@ -206,12 +234,12 @@ filenames_to_keys = {
     "10m_v_component_of_wind": "northward_wind_at_10_metres",
     "2m_dewpoint_temperature": "dew_point_temperature_at_2_metres",
     "2m_temperature": "air_temperature_at_2_metres",
-    "large_scale_precipitation": "precipitation_amount_1hour_Accumulation",
+    "total_precipitation": "precipitation_amount_1hour_Accumulation",
     "maximum_2m_temperature_since_previous_post_processing": "air_temperature_at_2_metres_1hour_Maximum",
     "minimum_2m_temperature_since_previous_post_processing": "air_temperature_at_2_metres_1hour_Minimum",
     "sea_surface_temperature": "sea_surface_temperature",
     "surface_pressure": "surface_air_pressure",
-    "surface_solar_radiation_downwards": "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation",
+    "surface_solar_radiation_downwards": "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation",  # noqa: E501
     "mean_sea_level_pressure": "air_pressure_at_mean_sea_level",
 }
 
@@ -233,7 +261,7 @@ def build_query(variable: str, period: pd.Period):
 
 def transform(cds_ds: xr.Dataset) -> xr.Dataset:
     """
-    Transform an xarray Dataset to match what's provided by era5-pds
+    Transform an xarray Dataset to match what's provided by era5-pds.
     """
     # rename
     variables = set(cds_ds.variables)
@@ -242,17 +270,17 @@ def transform(cds_ds: xr.Dataset) -> xr.Dataset:
 
     # ds attrs
     result.attrs.update(DS_ATTRS)
-    result.attrs.pop("history", None)
+    history = result.attrs.pop("history", None)
+    logger.debug("Dropping history %s", history)
+
     # variable attrs
     for var in result.variables:
         result[var].attrs.update(ATTRS[var])
 
     if set(result.data_vars) & HAS_TIME_BOUNDS:
-        # 1 day
-        offset = np.array(10800000000000, dtype="timedelta64[ns]")
+        logger.debug("Adding time1_bounds for %s", variables)
+        offset = np.array(10800000000000, dtype="timedelta64[ns]")  # 1 Day
         start = result.time.data - offset
-        # nv = xr.DataArray([0, 1], dims=("nv",))
-        # nv = xr.DataArray([0, 1], name="nv", dims="nv")
 
         time1_bounds = xr.DataArray(
             np.stack((start, result.time.data), axis=1),
@@ -267,13 +295,246 @@ def transform(cds_ds: xr.Dataset) -> xr.Dataset:
     return result
 
 
-def fetch_one(variable: str, period: pd.Period, cds_api_key: str) -> xr.Dataset:
+def retry(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        e = RuntimeError
+        for i in range(1, 11):
+            try:
+                return func(*args, **kwargs)
+            except ConnectionResetError as e:
+                logger.exception("Connection reset error on try %d/10", i)
+            time.sleep(5)
+        else:
+            logger.warning("Failed 10 times. Re-raising")
+            raise e
+
+    return wrapper
+
+
+@retry
+def fetch_one(
+    variable: str, period: pd.Period, cds_api_key: str, basedir: str | None = None
+) -> xr.Dataset:
+    import cdsapi
+
     cds = cdsapi.Client(url="https://cds.climate.copernicus.eu/api/v2", key=cds_api_key)
     urllib3.disable_warnings()
 
     params = build_query(variable, period)
-    # TODO: tempfile, lifetime, etc.
     filename = f"{variable}.nc"
+    if basedir:
+        filename = os.path.join(basedir, filename)
 
     cds.retrieve("reanalysis-era5-single-levels", params, filename)
-    return xr.open_dataset(filename)
+    return xr.open_dataset(filename, chunks={"time": 24})
+
+
+def do_one(
+    kind: str,
+    period: pd.Period,
+    cds_api_key: str,
+    output_protocol: str,
+    output_path: str,
+    output_storage_options: dict[str, Any],
+) -> None:
+    """
+    Copy and convert for one month - kind.
+    """
+    variables = KINDS_TO_VARIABLES[kind]
+    td = tempfile.TemporaryDirectory()
+    N = len(variables)
+    datasets = []
+
+    with td:
+        for i, variable in enumerate(variables, 1):
+            logger.info(
+                "Downloading period - variable: %s - %s [%d / %d]",
+                period,
+                variable,
+                i,
+                N,
+            )
+            datasets.append(fetch_one(variable, period, cds_api_key, basedir=td.name))
+
+        logger.info("Transforming variables")
+        transformed = [transform(ds) for ds in datasets]
+        logger.info("Transformed variables")
+
+        logger.info("Combining variables")
+        ds = xr.combine_by_coords(transformed, join="exact")
+        logger.info("Combined variables")
+
+        store = fsspec.filesystem(output_protocol, **output_storage_options).get_mapper(
+            output_path
+        )
+        kwargs = {"consolidated": True}
+        if period != FIRST_PERIOD:
+            kwargs["mode"] = "a"
+            kwargs["append_dim"] = "time"
+
+        logger.info(
+            "Writing output to %s://%s", output_protocol, output_path, extra=kwargs
+        )
+
+        # TODO: validate that index is expected
+        ds.to_zarr(store, **kwargs)
+
+    logger.info("Wrote output to %s://%s", output_protocol, output_path)
+
+
+def determine_next_period(
+    output_protocol, output_path, output_storage_options
+) -> tuple[pd.Timestamp, pd.Period]:
+    """
+    Determine the next period to fetch, based on what's present in storage.
+    """
+    store = fsspec.filesystem(output_protocol, **output_storage_options).get_mapper(
+        output_path
+    )
+    if not store.fs.exists(os.path.join(output_path, ".zmetadata")):
+        # initial write to this
+        return FIRST_PERIOD
+
+    last = xr.open_dataset(store, engine="zarr").time[-1]
+    dt = pd.to_datetime(last.data)
+    hour = pd.Timedelta(hours=1)
+    if dt.hour != 23:
+        raise ValueError(f"Last hour written '{dt.hour}' is not 23! Check on the data.")
+
+    period = pd.Period(dt + hour, freq="M")
+    return dt, period
+
+
+def parse_args(args=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("kind", choices=["forecast", "analysis"])
+    parser.add_argument(
+        "--credential", type=str, default=os.environ.get("ETL_CREDENTIAL")
+    )
+    parser.add_argument("--output-protocol", type=str, default="abfs")
+    parser.add_argument("--output-path", type=str, default=None)
+    # parser.add_argument("--output-storage_options", type=str)
+    parser.add_argument("--cds-api-key", default=os.environ.get("ETL_CDS_API_KEY"))
+    parser.add_argument("--start-period", default=None)
+    parser.add_argument("--end-period", default=None)
+
+    return parser.parse_args(args)
+
+
+def prepare():
+    try:
+        import cdsapi
+    except ImportError:
+        subprocess.call([sys.executable, "-m", "pip", "install", "cdsapi"])
+
+
+def main(args=None):
+    args = parse_args(args)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(rich.logging.RichHandler())
+
+    credential = args.credential
+    kind = args.kind
+    output_protocol = args.output_protocol
+    output_path = args.output_path
+    cds_api_key = args.cds_api_key
+    start_period = args.start_period
+    end_period = args.end_period
+    # output_storage_options = args.output_storage_options
+
+    # assert kind in
+
+    output_storage_options = {"account_name": "cpdataeuwest", "credential": credential}
+
+    if output_path is None:
+        output_path = f"era5/{kind}.zarr"
+
+    last, next_period = determine_next_period(
+        output_protocol=output_protocol,
+        output_path=output_path,
+        output_storage_options=output_storage_options,
+    )
+
+    if start_period is None:
+        start_period = next_period
+    else:
+        start_period = pd.Period(start_period, freq="M")
+
+    if (start_period - pd.Period(last, freq="M")) != pd.offsets.MonthEnd(1):
+        raise ValueError(
+            f"start_period={start_period} is not consecutive with the last timestamp={last}"
+        )
+
+    if end_period is None:
+        end_period = pd.Period(pd.Timestamp.now() - pd.offsets.MonthBegin(2), freq="M")
+    else:
+        end_period = pd.Period(end_period, freq="M")
+
+    periods = pd.period_range(start_period, end_period, freq="M")
+    N = len(periods)
+
+    logger.info("Preparing")
+    prepare()
+
+    logger.info("Beginning extract for kind=%s - periods=%s", kind, periods)
+
+    for i, period in enumerate(periods, 1):
+        logger.info("Starting %s - %s [%d/%d]", kind, period, i, N)
+        do_one(
+            kind,
+            period,
+            cds_api_key=cds_api_key,
+            output_protocol=output_protocol,
+            output_path=output_path,
+            output_storage_options=output_storage_options,
+        )
+        logger.info("Finished %s - %s [%d/%d]", kind, period, i, N)
+
+    if len(periods):
+        logger.info("Starting compact 'time' dimension")
+        prefix = output_path
+        if output_protocol == "az":
+            # strip the container name
+            container_name, prefix = output_path.split("/", 1)
+            account_name = output_storage_options["account_name"]
+
+            cc = azure.storage.blob.ContainerClient(
+                f"https://{account_name}.blob.core.windows.net",
+                container_name,
+                credential=credential,
+            )
+            compact(prefix, cc)
+            logger.info("Finished compact 'time' dimension")
+
+
+def compact(prefix: str, cc: azure.storage.blob.ContainerClient):
+    """
+    Compact the `time` dimension into a single chunk.
+    """
+    # using azure.storage.blob rather than adlfs / fsspec to
+    # avoid any caching issues.
+    store = zarr.ABSStore(prefix=prefix, client=cc)
+    ds = xr.open_dataset(store, engine="zarr", chunks={})
+
+    time = ds["time"]
+    time.encoding["chunks"] = len(
+        time,
+    )
+    time.encoding["preferred_chunks"] = {"time": len(time)}
+    ds["time"].encoding
+
+    new_store = zarr.MemoryStore()
+    ds[["time"]].to_zarr(new_store)
+
+    for k, v in new_store.items():
+        if k.startswith("time"):
+            name = f"{prefix}/{k}"
+            print(k, "->", name)
+            cc.upload_blob(name, v, overwrite=True)
+
+    zarr.consolidate_metadata(store)
+
+
+if __name__ == "__main__":
+    main()
