@@ -1,3 +1,4 @@
+import json
 import logging
 
 import click
@@ -21,18 +22,40 @@ def create_era5_command(cli):
         "create-collection",
         short_help="Creates a STAC collection",
     )
+    @click.argument("root_path")
+    @click.argument("protocol")
     @click.argument("destination")
-    def create_collection_command(destination: str):
+    @click.option(
+        "--extra-field",
+        default=None,
+        help="Key-value pairs to include in extra-fields",
+        multiple=True,
+    )
+    @click.option(
+        "--storage-option",
+        default=None,
+        help="Storage options",
+        multiple=True,
+    )
+ 
+    def create_collection_command(root_path, protocol, destination: str, extra_field, storage_option):
         """Creates a STAC Collection
 
         Args:
             destination (str): An HREF for the Collection JSON
         """
-        collection = stac.create_collection()
+        extra_fields = dict(k.split("=", 1) for k in extra_field)
+        storage_options = dict(k.split("=", 1) for k in storage_option)
 
-        collection.set_self_href(destination)
+        collection = stac.create_collection(
+            root_path,
+            protocol,
+            storage_options,
+            extra_fields,
+        )
 
-        collection.save_object()
+        with open(destination, "w") as f:
+            json.dump(collection.to_dict(), f, indent=2)
 
         return None
 

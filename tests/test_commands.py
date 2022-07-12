@@ -8,7 +8,6 @@ from stactools.era5.commands import create_era5_command
 
 
 class CommandsTest(CliTestCase):
-
     def create_subcommand_functions(self):
         return [create_era5_command]
 
@@ -19,12 +18,9 @@ class CommandsTest(CliTestCase):
             # Example:
             destination = os.path.join(tmp_dir, "collection.json")
 
-            result = self.run_command(
-                ["era5", "create-collection", destination])
+            result = self.run_command(["era5", "create-collection", destination])
 
-            self.assertEqual(result.exit_code,
-                             0,
-                             msg="\n{}".format(result.output))
+            self.assertEqual(result.exit_code, 0, msg="\n{}".format(result.output))
 
             jsons = [p for p in os.listdir(tmp_dir) if p.endswith(".json")]
             self.assertEqual(len(jsons), 1)
@@ -41,15 +37,15 @@ class CommandsTest(CliTestCase):
 
             # Example:
             destination = os.path.join(tmp_dir, "item.json")
-            result = self.run_command([
-                "era5",
-                "create-item",
-                "/path/to/asset.tif",
-                destination,
-            ])
-            self.assertEqual(result.exit_code,
-                             0,
-                             msg="\n{}".format(result.output))
+            result = self.run_command(
+                [
+                    "era5",
+                    "create-item",
+                    "/path/to/asset.tif",
+                    destination,
+                ]
+            )
+            self.assertEqual(result.exit_code, 0, msg="\n{}".format(result.output))
 
             jsons = [p for p in os.listdir(tmp_dir) if p.endswith(".json")]
             self.assertEqual(len(jsons), 1)

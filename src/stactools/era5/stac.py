@@ -14,6 +14,8 @@ import pystac
 import xarray as xr
 import xstac
 
+from stactools.era5.constants import ITEM_ASSETS
+
 
 FC_VARIABLES = [
     "air_temperature_at_2_metres_1hour_Maximum",
@@ -35,7 +37,6 @@ AN_VARIABLES = [
 KINDS = ["an", "fc"]
 
 
-
 def create_collection(
     root_path: str,
     protocol: str,
@@ -48,7 +49,6 @@ def create_collection(
     storage_options = storage_options or {}
     extra_fields = extra_fields or {}
 
-    fs = fsspec.filesystem(protocol, **storage_options)
     items = [create_item(root_path, kind, protocol, storage_options) for kind in KINDS]
 
     collection_datacube = create_collection_datacube(items)
@@ -58,8 +58,7 @@ def create_collection(
         spatial=pystac.SpatialExtent(bboxes=[[-180, -90, 180, 90]]),
         temporal=pystac.TemporalExtent(
             intervals=[
-                datetime.datetime(1979, 1, 1),
-                None,
+                [datetime.datetime(1979, 1, 1), None],
             ]
         ),
     )
@@ -82,6 +81,12 @@ def create_collection(
             roles=[pystac.ProviderRole.PROCESSOR],
             url="https://planetos.com/",
         ),
+        pystac.Provider(
+            "Microsoft",
+            roles=[pystac.ProviderRole.HOST],
+            url="https://planetarycomputer.microsoft.com",
+        ),
+ 
     ]
     extra_fields.update(collection_datacube)
     collection_id = "era5-pds"
@@ -135,6 +140,16 @@ def create_collection(
     for k, v in summaries.items():
         r.summaries.add(k, v)
 
+    # Item assets
+    item_assets = pystac.extensions.item_assets.ItemAssetsExtension.ext(
+        r, add_if_missing=True
+    )
+    item_assets.item_assets = {
+        k: pystac.extensions.item_assets.AssetDefinition(v)
+        for k, v in ITEM_ASSETS.items()
+    }
+
+    # Datacube
     r.stac_extensions.append(
         "https://stac-extensions.github.io/datacube/v2.0.0/schema.json"
     )
@@ -287,4 +302,3 @@ def filter_kind(store_paths, kind):
 
     stems = [pathlib.Path(s).stem for s in store_paths]
     return [x for x, s in zip(store_paths, stems) if s in variables]
-
