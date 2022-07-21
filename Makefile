@@ -1,5 +1,7 @@
-examples/era5-pds.json:
-	stac era5 create-collection era5/ERA5/1979/01 abfs $@ \
+examples/era5.json:
+	stac era5 create-collection \
+		--root-path=era5/forecast.zarr --root-path=era5/analysis.zarr --kind=forecast --kind=analysis \
+		--destination=$@ \
 		--storage-option "account_name=cpdataeuwest" \
 		--storage-option "credential=${SAS_TOKEN}" \
 		--extra-field "msft:storage_account=cpdataeuwest" \

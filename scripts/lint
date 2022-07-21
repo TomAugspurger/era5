@@ -21,12 +21,10 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     if [ "${1:-}" = "--help" ]; then
         usage
     else
-        # Text formatting
-        ec --exclude "$EC_EXCLUDE"
         # Sort imports
         isort --check .
         # Code formatting
-        yapf -dpr ${DIRS_TO_CHECK[@]}
+        black .
         # Lint
         flake8 ${DIRS_TO_CHECK[@]}
         # Type checking

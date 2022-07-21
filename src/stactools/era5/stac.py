@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
-
-import pathlib
-import itertools
 import copy
 import datetime
-import json
 import pathlib
+from typing import Any
 
 import fsspec
 import pystac
@@ -15,7 +11,6 @@ import xarray as xr
 import xstac
 
 from stactools.era5.constants import ITEM_ASSETS
-
 
 FC_VARIABLES = [
     "air_temperature_at_2_metres_1hour_Maximum",
@@ -38,7 +33,8 @@ KINDS = ["an", "fc"]
 
 
 def create_collection(
-    root_path: str,
+    root_paths: tuple[str],
+    kinds: tuple[str],
     protocol: str,
     storage_options: dict[str, Any] | None = None,
     extra_fields: dict[str, Any] = None,
@@ -49,16 +45,19 @@ def create_collection(
     storage_options = storage_options or {}
     extra_fields = extra_fields or {}
 
-    items = [create_item(root_path, kind, protocol, storage_options) for kind in KINDS]
+    items = [
+        create_item(root_path, kind, protocol, storage_options=storage_options)
+        for root_path, kind in zip(root_paths, kinds)
+    ]
 
     collection_datacube = create_collection_datacube(items)
     # Done with I/O
 
     extent = pystac.Extent(
-        spatial=pystac.SpatialExtent(bboxes=[[-180, -90, 180, 90]]),
+        spatial=pystac.SpatialExtent(bboxes=[[-180.0, -90.0, 180.0, 90.0]]),
         temporal=pystac.TemporalExtent(
             intervals=[
-                [datetime.datetime(1979, 1, 1), None],
+                [datetime.datetime(1959, 1, 1), None],
             ]
         ),
     )
@@ -77,19 +76,13 @@ def create_collection(
             url="https://www.ecmwf.int/",
         ),
         pystac.Provider(
-            "Planet OS",
-            roles=[pystac.ProviderRole.PROCESSOR],
-            url="https://planetos.com/",
-        ),
-        pystac.Provider(
             "Microsoft",
-            roles=[pystac.ProviderRole.HOST],
+            roles=[pystac.ProviderRole.PROCESSOR, pystac.ProviderRole.HOST],
             url="https://planetarycomputer.microsoft.com",
         ),
- 
     ]
     extra_fields.update(collection_datacube)
-    collection_id = "era5-pds"
+    collection_id = "era5"
 
     r = pystac.Collection(
         collection_id,
@@ -98,7 +91,7 @@ def create_collection(
         keywords=keywords,
         extra_fields=extra_fields,
         providers=providers,
-        title="ERA5 - PDS",
+        title="ERA5",
         license="proprietary",
     )
     r.add_links(
@@ -117,7 +110,7 @@ def create_collection(
             ),
             pystac.Link(
                 rel="describedby",
-                target="https://confluence.ecmwf.int/display/CKB/How+to+acknowledge+and+cite+a+Climate+Data+Store+%28CDS%29+catalogue+entry+and+the+data+published+as+part+of+it",  # noqa
+                target="https://confluence.ecmwf.int/display/CKB/How+to+acknowledge+and+cite+a+Climate+Data+Store+%28CDS%29+catalogue+entry+and+the+data+published+as+part+of+it",  # noqa: 501
                 media_type="text/html",
                 title="How to cite",
             ),
@@ -126,7 +119,7 @@ def create_collection(
     r.add_asset(
         "thumbnail",
         pystac.Asset(
-            "https://ai4edatasetspublicassets.blob.core.windows.net/assets/pc_thumbnails/era5-thumbnail.png",
+            "https://ai4edatasetspublicassets.blob.core.windows.net/assets/pc_thumbnails/era5-thumbnail.png",  # noqa: E501
             title="Thumbnail",
             media_type=pystac.MediaType.PNG,
         ),
@@ -169,7 +162,7 @@ def create_item(
     storage_options: dict[str, Any] | None = None,
 ) -> pystac.Item:
     """
-    Create an ERA5 item from a list of paths, all of the same "kind".
+    Create an ERA5 item from a Zarr group.
 
     Parameters
     ----------
@@ -181,15 +174,10 @@ def create_item(
     """
     storage_options = storage_options or {}
     fs = fsspec.filesystem(protocol, **storage_options)
-    store_paths = fs.ls(path)
-    store_paths = filter_kind(store_paths, kind)
+    store = fs.get_mapper(path)
+    ds = xr.open_dataset(store, engine="zarr", consolidated=True)
+    properties = {"era5:kind": kind, "start_datetime": None, "end_datetime": None}
 
-    dss = [
-        xr.open_dataset(fs.get_mapper(store), engine="zarr", consolidated=True)
-        for store in store_paths
-    ]
-    ds = xr.combine_by_coords(dss, join="exact")
-    properties = {"start_datetime": None, "end_datetime": None, "era5:kind": kind}
     geometry = {
         "type": "Polygon",
         "coordinates": [
@@ -202,8 +190,8 @@ def create_item(
             ]
         ],
     }
-    bbox = [-180, -90, 180, 90]
-    item_id = name_item(store_paths[0].rsplit("/", 1)[0], kind)
+    bbox = [-180.0, -90.0, 180.0, 90.0]
+    item_id = f"era5-{kind}"
 
     template = pystac.Item(
         item_id,
@@ -229,38 +217,30 @@ def create_item(
             "storage_options": {"account_name": fs.account_name},
         }
     }
-    for store in store_paths:
-        p = pathlib.Path(store)
-        v = ds[p.stem]
-        item.add_asset(
-            p.stem,
-            pystac.Asset(
-                f"{fs.protocol}://{store}",
-                title=v.attrs["long_name"],
-                media_type="application/vnd+zarr",
-                roles=["data"],
-                extra_fields=asset_extra_fields,
-            ),
-        )
-
+    title = f"Zarr store for '{kind}' variables."
+    item.add_asset(
+        "data",
+        pystac.Asset(
+            f"{protocol}://{path}",
+            title=title,
+            media_type="application/vnd+zarr",
+            roles=["data"],
+            extra_fields=asset_extra_fields,
+        ),
+    )
     return item
 
 
-def name_item(root: str, kind: str) -> str:
-    *_, year, month = root.rstrip("/").split("/")
-    return "-".join(["era5-pds", year, month, kind])
-
-
-def create_collection_datacube(items: list[pystac.Item, pystac.Item]) -> dict[str, Any]:
+def create_collection_datacube(items: list[pystac.Item]) -> dict[str, Any]:
     # generate from 2 items
 
-    collection_datacube = {"cube:variables": {}}
+    collection_datacube: dict[str, dict[str, Any]] = {"cube:variables": {}}
     for item in items:
         collection_datacube["cube:dimensions"] = copy.deepcopy(
             item.properties["cube:dimensions"]
         )
         collection_datacube["cube:dimensions"]["time"]["extent"] = [
-            "1970-01-01T00:00:00Z",
+            "1959-01-01T00:00:00Z",
             None,
         ]
         # varies by month, so we set it to null
@@ -275,14 +255,6 @@ def create_collection_datacube(items: list[pystac.Item, pystac.Item]) -> dict[st
     return collection_datacube
 
 
-def group_paths(paths: list[str]):
-    paths = sorted(paths, key=collection_key)
-    for k, v in itertools.groupby(paths, key=collection_key):
-        v = list(v)
-        k2 = "fc" if k else "an"
-        yield k2, v
-
-
 def collection_key(path: str) -> bool:
     fc_vars = {
         "air_temperature_at_2_metres_1hour_Maximum",
@@ -292,13 +264,3 @@ def collection_key(path: str) -> bool:
     }
     p = pathlib.Path(path)
     return p.stem in fc_vars
-
-
-def filter_kind(store_paths, kind):
-    if kind == "fc":
-        variables = set(FC_VARIABLES)
-    else:
-        variables = set(AN_VARIABLES)
-
-    stems = [pathlib.Path(s).stem for s in store_paths]
-    return [x for x, s in zip(store_paths, stems) if s in variables]

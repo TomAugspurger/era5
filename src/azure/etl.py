@@ -2,31 +2,32 @@
 ETL from the Climate Data Store to Azure
 """
 from __future__ import annotations
-import argparse
 
-import os
-import zarr
-import azure.storage.blob
-import time
+import argparse
+import enum
 import functools
+import logging
+import os
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
+
 import fsspec
+import numpy as np
 import pandas as pd
 import rich.logging
-import enum
-import numpy as np
 import urllib3
 import xarray as xr
+import zarr
 
-import logging
+import azure.storage.blob
 
 logger = logging.getLogger(__name__)
 
-
 FIRST_PERIOD = pd.Period("1959-01-01", freq="M")
+FIRST_LAST_DATETIME = pd.Timestamp("1958-12-31")
 
 
 class Kind(str, enum.Enum):
@@ -52,8 +53,7 @@ AN_VARIABLES = [
     "sea_surface_temperature",
     "surface_pressure",
 ]
-KINDS_TO_VARIABLES = {Kind.forecast: FC_VARIABLES, Kind.analysis: AN_VARIABLES}
-
+KINDS_TO_VARIABLES = {Kind.forecast.value: FC_VARIABLES, Kind.analysis: AN_VARIABLES}
 
 DS_ATTRS = {"institution": "ECMWF", "source": "Reanalysis", "title": "ERA5 forecasts"}
 
@@ -69,7 +69,7 @@ ATTRS = {
     },
     "air_temperature_at_2_metres_1hour_Maximum": {
         "long_name": "Maximum temperature at 2 metres since previous post-processing",
-        "nameCDM": "Maximum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",
+        "nameCDM": "Maximum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",  # noqa: E501
         "nameECMWF": "Maximum temperature at 2 metres since previous post-processing",
         "product_type": "forecast",
         "shortNameECMWF": "mx2t",
@@ -78,7 +78,7 @@ ATTRS = {
     },
     "air_temperature_at_2_metres_1hour_Minimum": {
         "long_name": "Minimum temperature at 2 metres since previous post-processing",
-        "nameCDM": "Minimum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",
+        "nameCDM": "Minimum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",  # noqa: E501
         "nameECMWF": "Minimum temperature at 2 metres since previous post-processing",
         "product_type": "forecast",
         "shortNameECMWF": "mn2t",
@@ -157,15 +157,6 @@ ATTRS = {
         "standard_name": "northward_wind",
         "units": "m s**-1",
     },
-    "air_pressure_at_mean_sea_level": {
-        "long_name": "Mean sea level pressure",
-        "nameCDM": "Mean_sea_level_pressure_surface",
-        "nameECMWF": "Mean sea level pressure",
-        "product_type": "analysis",
-        "shortNameECMWF": "msl",
-        "standard_name": "air_pressure_at_mean_sea_level",
-        "units": "Pa",
-    },
     "dew_point_temperature_at_2_metres": {
         "long_name": "2 metre dewpoint temperature",
         "nameCDM": "2_metre_dewpoint_temperature_surface",
@@ -197,14 +188,13 @@ ATTRS = {
     "time": {"standard_name": "time"},
 }
 
-
 NAMES = {
     "sp": "surface_air_pressure",
     "tp": "precipitation_amount_1hour_Accumulation",
     "longitude": "lon",
     "latitude": "lat",
     "time": "time",
-    "ssrd": "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation",
+    "ssrd": "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation",  # noqa: E501
     "mx2t": "air_temperature_at_2_metres_1hour_Maximum",
     "mn2t": "air_temperature_at_2_metres_1hour_Minimum",
     "v10": "northward_wind_at_10_metres",
@@ -217,7 +207,6 @@ NAMES = {
     "msl": "air_pressure_at_mean_sea_level",
 }
 
-
 # These are "forecast" variables, which need a `time1_bnds` data variable and `nv` coordinate.
 HAS_TIME_BOUNDS = {
     "precipitation_amount_1hour_Accumulation",
@@ -225,7 +214,6 @@ HAS_TIME_BOUNDS = {
     "air_temperature_at_2_metres_1hour_Maximum",
     "air_temperature_at_2_metres_1hour_Minimum",
 }
-
 
 filenames_to_keys = {
     "100m_u_component_of_wind": "eastward_wind_at_100_metres",
@@ -235,8 +223,8 @@ filenames_to_keys = {
     "2m_dewpoint_temperature": "dew_point_temperature_at_2_metres",
     "2m_temperature": "air_temperature_at_2_metres",
     "total_precipitation": "precipitation_amount_1hour_Accumulation",
-    "maximum_2m_temperature_since_previous_post_processing": "air_temperature_at_2_metres_1hour_Maximum",
-    "minimum_2m_temperature_since_previous_post_processing": "air_temperature_at_2_metres_1hour_Minimum",
+    "maximum_2m_temperature_since_previous_post_processing": "air_temperature_at_2_metres_1hour_Maximum",  # noqa: E501
+    "minimum_2m_temperature_since_previous_post_processing": "air_temperature_at_2_metres_1hour_Minimum",  # noqa: E501
     "sea_surface_temperature": "sea_surface_temperature",
     "surface_pressure": "surface_air_pressure",
     "surface_solar_radiation_downwards": "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation",  # noqa: E501
@@ -269,13 +257,13 @@ def transform(cds_ds: xr.Dataset) -> xr.Dataset:
     result = cds_ds.rename(name_dict)
 
     # ds attrs
-    result.attrs.update(DS_ATTRS)
+    result.attrs.update(DS_ATTRS)  # type: ignore
     history = result.attrs.pop("history", None)
     logger.debug("Dropping history %s", history)
 
     # variable attrs
     for var in result.variables:
-        result[var].attrs.update(ATTRS[var])
+        result[var].attrs.update(ATTRS[var])  # type: ignore
 
     if set(result.data_vars) & HAS_TIME_BOUNDS:
         logger.debug("Adding time1_bounds for %s", variables)
@@ -302,7 +290,7 @@ def retry(func):
         for i in range(1, 11):
             try:
                 return func(*args, **kwargs)
-            except ConnectionResetError as e:
+            except ConnectionResetError:
                 logger.exception("Connection reset error on try %d/10", i)
             time.sleep(5)
         else:
@@ -368,7 +356,7 @@ def do_one(
         store = fsspec.filesystem(output_protocol, **output_storage_options).get_mapper(
             output_path
         )
-        kwargs = {"consolidated": True}
+        kwargs: dict[str, Any] = {"consolidated": True}
         if period != FIRST_PERIOD:
             kwargs["mode"] = "a"
             kwargs["append_dim"] = "time"
@@ -394,7 +382,7 @@ def determine_next_period(
     )
     if not store.fs.exists(os.path.join(output_path, ".zmetadata")):
         # initial write to this
-        return FIRST_PERIOD
+        return FIRST_LAST_DATETIME, FIRST_PERIOD
 
     last = xr.open_dataset(store, engine="zarr").time[-1]
     dt = pd.to_datetime(last.data)
@@ -424,7 +412,7 @@ def parse_args(args=None):
 
 def prepare():
     try:
-        import cdsapi
+        import cdsapi  # noqa: F401
     except ImportError:
         subprocess.call([sys.executable, "-m", "pip", "install", "cdsapi"])
 

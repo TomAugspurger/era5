@@ -1,30 +1,28 @@
-import unittest
+import planetary_computer.sas
+import pytest
 
 from stactools.era5 import stac
 
 
-class StacTest(unittest.TestCase):
-    def test_create_collection(self):
-        # Write tests for each for the creation of a STAC Collection
-        # Create the STAC Collection...
-        collection = stac.create_collection()
-        collection.set_self_href("")
+@pytest.mark.parametrize("kind", ["forecast", "analysis"])
+def test_create_item(kind):
+    result = stac.create_item(
+        f"era5/{kind}.zarr",
+        kind=kind,
+        protocol="abfs",
+        storage_options={
+            "account_name": "cpdataeuwest",
+            "credential": planetary_computer.sas.get_token(
+                "cpdataeuwest", "era5"
+            ).token,
+        },
+    )
 
-        # Check that it has some required attributes
-        self.assertEqual(collection.id, "my-collection-id")
-        # self.assertEqual(collection.other_attr...
-
-        # Validate
-        collection.validate()
-
-    def test_create_item(self):
-        # Write tests for each for the creation of STAC Items
-        # Create the STAC Item...
-        item = stac.create_item("/path/to/asset.tif")
-
-        # Check that it has some required attributes
-        self.assertEqual(item.id, "my-item-id")
-        # self.assertEqual(item.other_attr...
-
-        # Validate
-        item.validate()
+    assert result.assets["data"].href == f"abfs://era5/{kind}.zarr"
+    assert result.assets["data"].extra_fields["xarray:open_kwargs"] == {
+        "engine": "zarr",
+        "chunks": {},
+        "consolidated": True,
+        "storage_options": {"account_name": "cpdataeuwest"},
+    }
+    assert result.id == f"era5-{kind}"

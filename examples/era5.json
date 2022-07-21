@@ -1,6 +1,6 @@
 {
   "type": "Collection",
-  "id": "era5-pds",
+  "id": "era5",
   "stac_version": "1.0.0",
   "description": "{{ collection.description }}",
   "links": [
@@ -31,6 +31,114 @@
   "msft:container": "era5",
   "msft:short_description": "A comprehensive reanalysis, which assimilates as many observations as possible in the upper air and near surface.",
   "cube:variables": {
+    "air_temperature_at_2_metres_1hour_Maximum": {
+      "type": "data",
+      "description": "Maximum temperature at 2 metres since previous post-processing",
+      "dimensions": [
+        "time",
+        "lat",
+        "lon"
+      ],
+      "unit": "K",
+      "attrs": {
+        "long_name": "Maximum temperature at 2 metres since previous post-processing",
+        "nameCDM": "Maximum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",
+        "nameECMWF": "Maximum temperature at 2 metres since previous post-processing",
+        "product_type": "forecast",
+        "shortNameECMWF": "mx2t",
+        "standard_name": "air_temperature",
+        "units": "K"
+      },
+      "shape": [
+        null,
+        721,
+        1440
+      ]
+    },
+    "air_temperature_at_2_metres_1hour_Minimum": {
+      "type": "data",
+      "description": "Minimum temperature at 2 metres since previous post-processing",
+      "dimensions": [
+        "time",
+        "lat",
+        "lon"
+      ],
+      "unit": "K",
+      "attrs": {
+        "long_name": "Minimum temperature at 2 metres since previous post-processing",
+        "nameCDM": "Minimum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",
+        "nameECMWF": "Minimum temperature at 2 metres since previous post-processing",
+        "product_type": "forecast",
+        "shortNameECMWF": "mn2t",
+        "standard_name": "air_temperature",
+        "units": "K"
+      },
+      "shape": [
+        null,
+        721,
+        1440
+      ]
+    },
+    "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation": {
+      "type": "data",
+      "description": "Surface solar radiation downwards",
+      "dimensions": [
+        "time",
+        "lat",
+        "lon"
+      ],
+      "unit": "J m**-2",
+      "attrs": {
+        "long_name": "Surface solar radiation downwards",
+        "nameCDM": "Surface_solar_radiation_downwards_surface_1_Hour_Accumulation",
+        "nameECMWF": "Surface solar radiation downwards",
+        "product_type": "forecast",
+        "shortNameECMWF": "ssrd",
+        "standard_name": "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air",
+        "units": "J m**-2"
+      },
+      "shape": [
+        null,
+        721,
+        1440
+      ]
+    },
+    "precipitation_amount_1hour_Accumulation": {
+      "type": "data",
+      "description": "Total precipitation",
+      "dimensions": [
+        "time",
+        "lat",
+        "lon"
+      ],
+      "unit": "m",
+      "attrs": {
+        "long_name": "Total precipitation",
+        "nameCDM": "Total_precipitation_1hour_Accumulation",
+        "nameECMWF": "Total precipitation",
+        "product_type": "forecast",
+        "shortNameECMWF": "tp",
+        "standard_name": "precipitation_amount",
+        "units": "m"
+      },
+      "shape": [
+        null,
+        721,
+        1440
+      ]
+    },
+    "time1_bounds": {
+      "type": "data",
+      "dimensions": [
+        "time",
+        "nv"
+      ],
+      "attrs": {},
+      "shape": [
+        null,
+        2
+      ]
+    },
     "air_pressure_at_mean_sea_level": {
       "type": "data",
       "description": "Mean sea level pressure",
@@ -246,122 +354,15 @@
         721,
         1440
       ]
-    },
-    "air_temperature_at_2_metres_1hour_Maximum": {
-      "type": "data",
-      "description": "Maximum temperature at 2 metres since previous post-processing",
-      "dimensions": [
-        "time",
-        "lat",
-        "lon"
-      ],
-      "unit": "K",
-      "attrs": {
-        "long_name": "Maximum temperature at 2 metres since previous post-processing",
-        "nameCDM": "Maximum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",
-        "nameECMWF": "Maximum temperature at 2 metres since previous post-processing",
-        "product_type": "forecast",
-        "shortNameECMWF": "mx2t",
-        "standard_name": "air_temperature",
-        "units": "K"
-      },
-      "shape": [
-        null,
-        721,
-        1440
-      ]
-    },
-    "time1_bounds": {
-      "type": "data",
-      "dimensions": [
-        "time",
-        "nv"
-      ],
-      "attrs": {},
-      "shape": [
-        null,
-        2
-      ]
-    },
-    "air_temperature_at_2_metres_1hour_Minimum": {
-      "type": "data",
-      "description": "Minimum temperature at 2 metres since previous post-processing",
-      "dimensions": [
-        "time",
-        "lat",
-        "lon"
-      ],
-      "unit": "K",
-      "attrs": {
-        "long_name": "Minimum temperature at 2 metres since previous post-processing",
-        "nameCDM": "Minimum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",
-        "nameECMWF": "Minimum temperature at 2 metres since previous post-processing",
-        "product_type": "forecast",
-        "shortNameECMWF": "mn2t",
-        "standard_name": "air_temperature",
-        "units": "K"
-      },
-      "shape": [
-        null,
-        721,
-        1440
-      ]
-    },
-    "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation": {
-      "type": "data",
-      "description": "Surface solar radiation downwards",
-      "dimensions": [
-        "time",
-        "lat",
-        "lon"
-      ],
-      "unit": "J m**-2",
-      "attrs": {
-        "long_name": "Surface solar radiation downwards",
-        "nameCDM": "Surface_solar_radiation_downwards_surface_1_Hour_Accumulation",
-        "nameECMWF": "Surface solar radiation downwards",
-        "product_type": "forecast",
-        "shortNameECMWF": "ssrd",
-        "standard_name": "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air",
-        "units": "J m**-2"
-      },
-      "shape": [
-        null,
-        721,
-        1440
-      ]
-    },
-    "precipitation_amount_1hour_Accumulation": {
-      "type": "data",
-      "description": "Total precipitation",
-      "dimensions": [
-        "time",
-        "lat",
-        "lon"
-      ],
-      "unit": "m",
-      "attrs": {
-        "long_name": "Total precipitation",
-        "nameCDM": "Total_precipitation_1hour_Accumulation",
-        "nameECMWF": "Total precipitation",
-        "product_type": "forecast",
-        "shortNameECMWF": "tp",
-        "standard_name": "precipitation_amount",
-        "units": "m"
-      },
-      "shape": [
-        null,
-        721,
-        1440
-      ]
     }
   },
   "cube:dimensions": {
     "time": {
       "extent": [
-        "1970-01-01T00:00:00Z",
+        "1959-01-01T00:00:00Z",
         null
       ],
+      "description": "time",
       "step": "P0DT1H0M0S",
       "type": "temporal"
     },
@@ -481,7 +482,7 @@
       ]
     }
   },
-  "title": "ERA5 - PDS",
+  "title": "ERA5",
   "extent": {
     "spatial": {
       "bbox": [
@@ -496,7 +497,7 @@
     "temporal": {
       "interval": [
         [
-          "1979-01-01T00:00:00Z",
+          "1959-01-01T00:00:00Z",
           null
         ]
       ]
@@ -521,15 +522,9 @@
       "url": "https://www.ecmwf.int/"
     },
     {
-      "name": "Planet OS",
-      "roles": [
-        "processor"
-      ],
-      "url": "https://planetos.com/"
-    },
-    {
       "name": "Microsoft",
       "roles": [
+        "processor",
         "host"
       ],
       "url": "https://planetarycomputer.microsoft.com"

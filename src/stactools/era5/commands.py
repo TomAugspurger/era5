@@ -22,9 +22,20 @@ def create_era5_command(cli):
         "create-collection",
         short_help="Creates a STAC collection",
     )
-    @click.argument("root_path")
-    @click.argument("protocol")
-    @click.argument("destination")
+    @click.option(
+        "--root-path",
+        default=None,
+        help="Storage options",
+        multiple=True,
+    )
+    @click.option(
+        "--kind",
+        default=None,
+        help="Storage options",
+        multiple=True,
+    )
+    @click.option("--protocol", default="abfs")
+    @click.option("--destination", default="-")
     @click.option(
         "--extra-field",
         default=None,
@@ -37,8 +48,9 @@ def create_era5_command(cli):
         help="Storage options",
         multiple=True,
     )
- 
-    def create_collection_command(root_path, protocol, destination: str, extra_field, storage_option):
+    def create_collection_command(
+        root_path, kind, destination: str, protocol, extra_field, storage_option
+    ):
         """Creates a STAC Collection
 
         Args:
@@ -49,6 +61,7 @@ def create_era5_command(cli):
 
         collection = stac.create_collection(
             root_path,
+            kind,
             protocol,
             storage_options,
             extra_fields,
@@ -56,22 +69,6 @@ def create_era5_command(cli):
 
         with open(destination, "w") as f:
             json.dump(collection.to_dict(), f, indent=2)
-
-        return None
-
-    @era5.command("create-item", short_help="Create a STAC item")
-    @click.argument("source")
-    @click.argument("destination")
-    def create_item_command(source: str, destination: str):
-        """Creates a STAC Item
-
-        Args:
-            source (str): HREF of the Asset associated with the Item
-            destination (str): An HREF for the STAC Collection
-        """
-        item = stac.create_item(source)
-
-        item.save_object(dest_href=destination)
 
         return None
 

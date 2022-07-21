@@ -3,6 +3,6 @@ image: mcr.microsoft.com/planetary-computer/python:latest
 args:
   - python
   - etl.py
-  - "forecast"
+  - "analysis"
   - "--end-period=2022-06-01"
 code: etl.py
