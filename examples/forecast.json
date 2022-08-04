@@ -1,0 +1,209 @@
+{
+  "type": "Feature",
+  "stac_version": "1.0.0",
+  "id": "era5-forecast",
+  "properties": {
+    "era5:kind": "forecast",
+    "start_datetime": "1959-01-01T07:00:00Z",
+    "end_datetime": "2022-04-30T23:00:00Z",
+    "cube:dimensions": {
+      "time": {
+        "extent": [
+          "1959-01-01T07:00:00Z",
+          "2022-04-30T23:00:00Z"
+        ],
+        "description": "time",
+        "step": "P0DT1H0M0S",
+        "type": "temporal"
+      },
+      "lon": {
+        "axis": "x",
+        "extent": [
+          0.0,
+          359.75
+        ],
+        "step": 0.25,
+        "description": "longitude",
+        "reference_system": "epsg:4326",
+        "type": "spatial"
+      },
+      "lat": {
+        "axis": "y",
+        "extent": [
+          -90.0,
+          90.0
+        ],
+        "step": -0.25,
+        "description": "latitude",
+        "reference_system": "epsg:4326",
+        "type": "spatial"
+      }
+    },
+    "cube:variables": {
+      "air_temperature_at_2_metres_1hour_Maximum": {
+        "type": "data",
+        "description": "Maximum temperature at 2 metres since previous post-processing",
+        "dimensions": [
+          "time",
+          "lat",
+          "lon"
+        ],
+        "unit": "K",
+        "attrs": {
+          "long_name": "Maximum temperature at 2 metres since previous post-processing",
+          "nameCDM": "Maximum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",
+          "nameECMWF": "Maximum temperature at 2 metres since previous post-processing",
+          "product_type": "forecast",
+          "shortNameECMWF": "mx2t",
+          "standard_name": "air_temperature",
+          "units": "K"
+        },
+        "shape": [
+          555137,
+          721,
+          1440
+        ]
+      },
+      "air_temperature_at_2_metres_1hour_Minimum": {
+        "type": "data",
+        "description": "Minimum temperature at 2 metres since previous post-processing",
+        "dimensions": [
+          "time",
+          "lat",
+          "lon"
+        ],
+        "unit": "K",
+        "attrs": {
+          "long_name": "Minimum temperature at 2 metres since previous post-processing",
+          "nameCDM": "Minimum_temperature_at_2_metres_since_previous_post-processing_surface_1_Hour_2",
+          "nameECMWF": "Minimum temperature at 2 metres since previous post-processing",
+          "product_type": "forecast",
+          "shortNameECMWF": "mn2t",
+          "standard_name": "air_temperature",
+          "units": "K"
+        },
+        "shape": [
+          555137,
+          721,
+          1440
+        ]
+      },
+      "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air_1hour_Accumulation": {
+        "type": "data",
+        "description": "Surface solar radiation downwards",
+        "dimensions": [
+          "time",
+          "lat",
+          "lon"
+        ],
+        "unit": "J m**-2",
+        "attrs": {
+          "long_name": "Surface solar radiation downwards",
+          "nameCDM": "Surface_solar_radiation_downwards_surface_1_Hour_Accumulation",
+          "nameECMWF": "Surface solar radiation downwards",
+          "product_type": "forecast",
+          "shortNameECMWF": "ssrd",
+          "standard_name": "integral_wrt_time_of_surface_direct_downwelling_shortwave_flux_in_air",
+          "units": "J m**-2"
+        },
+        "shape": [
+          555137,
+          721,
+          1440
+        ]
+      },
+      "precipitation_amount_1hour_Accumulation": {
+        "type": "data",
+        "description": "Total precipitation",
+        "dimensions": [
+          "time",
+          "lat",
+          "lon"
+        ],
+        "unit": "m",
+        "attrs": {
+          "long_name": "Total precipitation",
+          "nameCDM": "Total_precipitation_1hour_Accumulation",
+          "nameECMWF": "Total precipitation",
+          "product_type": "forecast",
+          "shortNameECMWF": "tp",
+          "standard_name": "precipitation_amount",
+          "units": "m"
+        },
+        "shape": [
+          555137,
+          721,
+          1440
+        ]
+      },
+      "time1_bounds": {
+        "type": "data",
+        "dimensions": [
+          "time",
+          "nv"
+        ],
+        "attrs": {},
+        "shape": [
+          555137,
+          2
+        ]
+      }
+    },
+    "datetime": null
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          180.0,
+          -90.0
+        ],
+        [
+          180.0,
+          90.0
+        ],
+        [
+          -180.0,
+          90.0
+        ],
+        [
+          -180.0,
+          -90.0
+        ],
+        [
+          180.0,
+          -90.0
+        ]
+      ]
+    ]
+  },
+  "links": [],
+  "assets": {
+    "data": {
+      "href": "az://era5/forecast.zarr",
+      "type": "application/vnd+zarr",
+      "title": "Zarr store for 'forecast' variables.",
+      "xarray:open_kwargs": {
+        "engine": "zarr",
+        "chunks": {},
+        "consolidated": true,
+        "storage_options": {
+          "account_name": "cpdataeuwest"
+        }
+      },
+      "roles": [
+        "data"
+      ]
+    }
+  },
+  "bbox": [
+    -180.0,
+    -90.0,
+    180.0,
+    90.0
+  ],
+  "stac_extensions": [
+    "https://stac-extensions.github.io/datacube/v2.0.0/schema.json"
+  ]
+}

@@ -72,4 +72,24 @@ def create_era5_command(cli):
 
         return None
 
+    @era5.command(
+        "create-pc-item",
+        short_help="Create a STAC item."
+    )
+    @click.option("--path")
+    @click.option("--kind")
+    @click.option("--protocol")
+    @click.option("--account-name")
+    @click.option("--destination", type=click.File("wt"))
+    def create_pc_item(path, kind, protocol, account_name, destination):
+        import planetary_computer
+        container_name = path.split("/")[0]
+        credential = planetary_computer.sas.get_token(account_name, container_name).token
+        item = stac.create_item(
+            path, kind=kind, protocol=protocol, storage_options={"account_name": account_name, "credential": credential}
+        )
+        json.dump(item.to_dict(), destination, indent=2)
+
+
+
     return era5
