@@ -482,7 +482,7 @@ def main(args=None):
     if len(periods):
         logger.info("Starting compact 'time' dimension")
         prefix = output_path
-        if output_protocol == "az":
+        if output_protocol == "abfs":
             # strip the container name
             container_name, prefix = output_path.split("/", 1)
             account_name = output_storage_options["account_name"]
@@ -522,6 +522,14 @@ def compact(prefix: str, cc: azure.storage.blob.ContainerClient):
             cc.upload_blob(name, v, overwrite=True)
 
     zarr.consolidate_metadata(store)
+
+    # Remove any stale fragments
+    KEEP = {".zarray", ".zattrs", "0"}
+
+    for blob in cc.list_blobs(name_starts_with="forecast.zarr/time/"):
+        if blob.name.split("/")[-1] not in KEEP:
+            logger.info("Deleting %s", blob.name)
+            cc.delete_blob(blob)
 
 
 if __name__ == "__main__":
