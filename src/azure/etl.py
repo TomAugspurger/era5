@@ -253,8 +253,10 @@ def transform(cds_ds: xr.Dataset) -> xr.Dataset:
     """
     # rename
     variables = set(cds_ds.variables)
+    logger.info("CDS variable names: %s", list(variables))
     name_dict = {k: v for k, v in NAMES.items() if k in variables}
     result = cds_ds.rename(name_dict)
+    logger.info("renamed variables: %s", list(result.variables))
 
     # ds attrs
     result.attrs.update(DS_ATTRS)  # type: ignore
