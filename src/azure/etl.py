@@ -255,7 +255,9 @@ def transform(cds_ds: xr.Dataset) -> xr.Dataset:
     variables = set(cds_ds.variables)
     logger.info("CDS variable names: %s", list(variables))
     name_dict = {k: v for k, v in NAMES.items() if k in variables}
-    result = cds_ds.rename(name_dict)
+    # expver, the experiment or model version, seems to only *sometimes* be present.
+    # https://confluence.ecmwf.int/pages/viewpage.action?pageId=124752178
+    result = cds_ds.rename(name_dict).drop_vars(["expver"], errors="ignore")
     logger.info("renamed variables: %s", list(result.variables))
 
     # ds attrs
