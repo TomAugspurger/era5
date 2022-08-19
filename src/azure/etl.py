@@ -1,5 +1,17 @@
 """
-ETL from the Climate Data Store to Azure
+ETL from the Climate Data Store to Azure.
+
+## Time and chunking
+
+## Temporal coverage
+
+3 months from today (yesterday?)
+
+See the following links for more information:
+
+* https://confluence.ecmwf.int/pages/viewpage.action?pageId=173385064
+* https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview
+* https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation
 """
 from __future__ import annotations
 
@@ -26,7 +38,8 @@ import azure.storage.blob
 
 logger = logging.getLogger(__name__)
 
-FIRST_PERIOD = pd.Period("1959-01-01", freq="M")
+FREQ = "D"  # daily
+FIRST_PERIOD = pd.Period("1959-01-01", freq=FREQ)
 FIRST_LAST_DATETIME = pd.Timestamp("1958-12-31")
 
 
@@ -232,8 +245,8 @@ filenames_to_keys = {
 }
 
 
-def build_query(variable: str, period: pd.Period):
-    assert period.freq == "M"
+def build_daily_query(variable: str, period: pd.Period):
+    assert period.freq == FREQ
 
     params = {
         "product_type": "reanalysis",
@@ -241,7 +254,7 @@ def build_query(variable: str, period: pd.Period):
         "variable": variable,
         "year": str(period.year),
         "month": f"{period.month:0>2}",
-        "day": [f"{i + 1:0>2}" for i in range(period.days_in_month)],
+        "day": str(period.day),
         "time": [f"{i:02d}:00" for i in range(24)],
     }
     return params
@@ -257,6 +270,7 @@ def transform(cds_ds: xr.Dataset) -> xr.Dataset:
     name_dict = {k: v for k, v in NAMES.items() if k in variables}
     # expver, the experiment or model version, seems to only *sometimes* be present.
     # https://confluence.ecmwf.int/pages/viewpage.action?pageId=124752178
+    # https://confluence.ecmwf.int/pages/viewpage.action?pageId=173385064
     result = cds_ds.rename(name_dict).drop_vars(["expver"], errors="ignore")
     logger.info("renamed variables: %s", list(result.variables))
 
@@ -278,7 +292,7 @@ def transform(cds_ds: xr.Dataset) -> xr.Dataset:
             np.stack((start, result.time.data), axis=1),
             dims=("time", "nv"),
             coords={"time": result.time},
-        )
+        ).chunk({"time": 24})
         result["time1_bounds"] = time1_bounds
 
     keys = ["lat", "lon", "time"] + list(result.data_vars)
@@ -304,22 +318,21 @@ def retry(func):
     return wrapper
 
 
+
 @retry
-def fetch_one(
-    variable: str, period: pd.Period, cds_api_key: str, basedir: str | None = None
-) -> xr.Dataset:
+def fetch_day(variable: str, day: pd.Period, cds_api_key: str, basedir: str | None = None) -> xr.Dataset:
     import cdsapi
 
     cds = cdsapi.Client(url="https://cds.climate.copernicus.eu/api/v2", key=cds_api_key)
     urllib3.disable_warnings()
 
-    params = build_query(variable, period)
+    params = build_daily_query(variable, day)
     filename = f"{variable}.nc"
     if basedir:
         filename = os.path.join(basedir, filename)
 
     cds.retrieve("reanalysis-era5-single-levels", params, filename)
-    return xr.open_dataset(filename, chunks={"time": 24})
+    return xr.open_dataset(filename, chunks={"time": 24}, use_cftime=False)
 
 
 def do_one(
@@ -347,7 +360,7 @@ def do_one(
                 i,
                 N,
             )
-            datasets.append(fetch_one(variable, period, cds_api_key, basedir=td.name))
+            datasets.append(fetch_day(variable, period, cds_api_key, basedir=td.name))
 
         logger.info("Transforming variables")
         transformed = [transform(ds) for ds in datasets]
@@ -379,7 +392,7 @@ def determine_next_period(
     output_protocol, output_path, output_storage_options
 ) -> tuple[pd.Timestamp, pd.Period]:
     """
-    Determine the next period to fetch, based on what's present in storage.
+    Determine the next period to fetch, based on what's present in storage and the present date.
     """
     store = fsspec.filesystem(output_protocol, **output_storage_options).get_mapper(
         output_path
@@ -394,7 +407,7 @@ def determine_next_period(
     if dt.hour != 23:
         raise ValueError(f"Last hour written '{dt.hour}' is not 23! Check on the data.")
 
-    period = pd.Period(dt + hour, freq="M")
+    period = pd.Period(dt + hour, freq=FREQ)
     return dt, period
 
 
@@ -418,7 +431,7 @@ def prepare():
     try:
         import cdsapi  # noqa: F401
     except ImportError:
-        subprocess.call([sys.executable, "-m", "pip", "install", "cdsapi"])
+        subprocess.call([sys.executable, "-m", "pip", "install", "git+https://github.com/TomAugspurger/cdsapi.git@loggingfix"])
 
 
 def main(args=None):
@@ -451,19 +464,25 @@ def main(args=None):
     if start_period is None:
         start_period = next_period
     else:
-        start_period = pd.Period(start_period, freq="M")
+        start_period = pd.Period(start_period, freq=FREQ)
 
-    if (start_period - pd.Period(last, freq="M")) != pd.offsets.MonthEnd(1):
+    if (start_period - pd.Period(last, freq=FREQ)) != pd.offsets.Day(1):
         raise ValueError(
             f"start_period={start_period} is not consecutive with the last timestamp={last}"
         )
 
+    cutoff_period = pd.Period(pd.Timestamp.today() - pd.offsets.DateOffset(months=3, days=1), freq=FREQ)
     if end_period is None:
-        end_period = pd.Period(pd.Timestamp.now() - pd.offsets.MonthBegin(2), freq="M")
+        end_period = cutoff_period
     else:
-        end_period = pd.Period(end_period, freq="M")
+        end_period = pd.Period(end_period, freq=FREQ)
 
-    periods = pd.period_range(start_period, end_period, freq="M")
+    if end_period > cutoff_period:
+        raise ValueError(
+            f"end_period={end_period} is later than 3 months ago (={cutoff_period})"
+        )
+
+    periods = pd.period_range(start_period, end_period, freq=FREQ)
     N = len(periods)
 
     logger.info("Preparing")
@@ -506,6 +525,7 @@ def compact(prefix: str, cc: azure.storage.blob.ContainerClient):
     """
     # using azure.storage.blob rather than adlfs / fsspec to
     # avoid any caching issues.
+    prefix = prefix.rstrip("/")
     store = zarr.ABSStore(prefix=prefix, client=cc)
     ds = xr.open_dataset(store, engine="zarr", chunks={})
 
@@ -520,7 +540,7 @@ def compact(prefix: str, cc: azure.storage.blob.ContainerClient):
     ds[["time"]].to_zarr(new_store)
 
     for k, v in new_store.items():
-        if k.startswith("time"):
+        if k.startswith("time/"):
             name = f"{prefix}/{k}"
             print(k, "->", name)
             cc.upload_blob(name, v, overwrite=True)
@@ -530,7 +550,7 @@ def compact(prefix: str, cc: azure.storage.blob.ContainerClient):
     # Remove any stale fragments
     KEEP = {".zarray", ".zattrs", "0"}
 
-    for blob in cc.list_blobs(name_starts_with="forecast.zarr/time/"):
+    for blob in cc.list_blobs(name_starts_with=f"{prefix}/time/"):
         if blob.name.split("/")[-1] not in KEEP:
             logger.info("Deleting %s", blob.name)
             cc.delete_blob(blob)
